@@ -1,0 +1,5 @@
+agentic_chunker
+langchain_openai
+langchain_community
+dotnev
+traceback
