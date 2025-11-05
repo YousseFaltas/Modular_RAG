@@ -1,5 +1,10 @@
-agentic_chunker
-langchain_openai
-langchain_community
-dotnev
-traceback
+requests
+ipykernel
+python-dotenv
+openai
+pydantic
+docling
+streamlit
+tiktoken
+weaviate-client 
+psycopg
