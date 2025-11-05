@@ -30,25 +30,24 @@ tokenizer = TikTokenWrapper(model_name=EMBEDDING_MODEL)
 MAX_TOKENS = 8191
 
 # --- 2. DOCUMENT CONVERSION & CHUNKING ---
+def data_extractions(pdf_path:str) -> Any:
+    print(f"Starting conversion for: {pdf_path}")
+    result = converter.convert(pdf_path)
+    print("Document conversion complete.")
 
-print(f"Starting conversion for: {PDF_PATH}")
-result = converter.convert(PDF_PATH)
-document = result.document
-print("Document conversion complete.")
+    chunker = HybridChunker(
+        tokenizer=tokenizer,
+        max_tokens=MAX_TOKENS,
+        merge_peers=True,
+    )
 
-chunker = HybridChunker(
-    tokenizer=tokenizer,
-    max_tokens=MAX_TOKENS,
-    merge_peers=True,
-)
-
-chunk_iter = chunker.chunk(dl_doc=result.document)
-chunks = list(chunk_iter)
-print(f"Document chunking complete. Found {len(chunks)} chunks.")
+    chunk_iter = chunker.chunk(dl_doc=result.document)
+    chunks = list(chunk_iter)
+    print(f"Document chunking complete. Found {len(chunks)} chunks.")
+    return chunks
 
 
 # --- 3. DATA PROCESSING & EMBEDDING (REPLACED) ---
-
 def process_and_embed_chunks(
     docling_chunks: List[Any], 
     openai_client: OpenAI, 
@@ -143,6 +142,7 @@ def process_and_embed_chunks(
 # --- 4. EXECUTION (UPDATED) ---
 
 def main():
+    chunks = data_extractions(PDF_PATH)
     if not chunks:
         print("No chunks were generated. Exiting.")
         return
