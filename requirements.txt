@@ -8,3 +8,15 @@ streamlit
 tiktoken
 weaviate-client 
 psycopg
+torch
+sentence
+psycopg2
+weaviate-client
+langchain
+tree-sitter
+tree_sitter_c
+tree_sitter_java
+tree_sitter_javascript
+tree_sitter_python
+tree_sitter_typescript
+

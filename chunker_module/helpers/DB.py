@@ -1,87 +1,140 @@
-import psycopg
-import uuid
 import json # <-- ADD THIS IMPORT
-from psycopg.rows import dict_row
 from typing import List, Dict, Any
 from dotenv import load_dotenv
 import os
+import psycopg2
+from psycopg2 import Error
+import time
+
 
 load_dotenv()
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:pass@localhost:5432/rag_db")
 
-# --- Connect to PostgreSQL ---
-print("Connecting to PostgreSQL...")
-try:
-    with psycopg.connect(DATABASE_URL) as pg_conn:
-        with pg_conn.cursor() as cur:
-            cur.execute("SELECT 1")
-            print("PostgreSQL connection successful.")
-except Exception as e:
-    print(f"ERROR: Could not connect to PostgreSQL: {e}")
+# --- PostgreSQL Connection Details ---
+DB_HOST = os.getenv("POSTGRES_HOST") 
+DB_NAME = os.getenv("POSTGRES_DB")
+DB_USER = os.getenv("POSTGRES_USER")   
+DB_PASSWORD = os.getenv("POSTGRES_PASSWORD")
+DB_PORT = os.getenv("POSTGRES_PORT") 
 
-# --- SCHEMA (REPLACED) ---
-def setup_postgres_schema(conn_string: str):
-    """Ensures the PostgreSQL 'chunks' table exists with the full schema."""
-    with psycopg.connect(conn_string) as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-            CREATE TABLE IF NOT EXISTS chunks (
-                chunk_id UUID PRIMARY KEY,
-                doc_hash TEXT NOT NULL,
-                chunk_index INTEGER NOT NULL,
-                filename TEXT,
-                page_numbers JSONB,
-                title TEXT,
-                text TEXT NOT NULL,
-                content_types JSONB,
-                bounding_boxes JSONB,
-                created_at TIMESTZ DEFAULT NOW()
-            );
-            
-            -- Index for linking chunks to documents
-            CREATE INDEX IF NOT EXISTS idx_chunks_doc_hash ON chunks (doc_hash);
-            -- Index for finding chunks by filename
-            CREATE INDEX IF NOT EXISTS idx_chunks_filename ON chunks (filename);
-            """)
-            conn.commit()
-    print("PostgreSQL 'chunks' table is ready.")
+def get_postgres_connection():
+    """This function connect to the postgress DB 
 
+    Returns:
+        DB object: the initialized cursor for DB communication
+    """
+    try:
+        conn = psycopg2.connect(
+            host=DB_HOST,
+            database=DB_NAME,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            port=DB_PORT
+        )
+        conn.autocommit = False
+        cursor = conn.cursor()
+        print("✅ Successfully connected to PostgreSQL")
+        return conn, cursor
+    except Error as e:
+        print(f"❌ Error connecting to PostgreSQL: {e}")
+        return None, None
+    
 # --- Run Setup ---
-setup_postgres_schema(DATABASE_URL)
+
+MAX_RETRIES = 10
+RETRY_INTERVAL = 3  # seconds
+
+def wait_for_postgres():
+    for attempt in range(MAX_RETRIES):
+        try:
+            print(f"Attempt {attempt + 1} to connect to PostgreSQL...")
+            conn = psycopg2.connect(
+                host=DB_HOST,
+                database=DB_NAME,
+                user=DB_USER,
+                password=DB_PASSWORD,
+                port=DB_PORT
+            )
+            conn.close()
+            print("PostgreSQL is available.")
+            return True
+        except Exception as e:
+            print(f"Connection failed: {e}")
+            time.sleep(RETRY_INTERVAL)
+    print("PostgreSQL not available after multiple attempts.")
+    return False
 
 # --- INGESTION (REPLACED) ---
-def ingest_to_postgres(data: List[Dict[str, Any]], conn_string: str = DATABASE_URL):
-    """Batch-inserts structured chunk data into PostgreSQL."""
-    print(f"Batch inserting {len(data)} records into PostgreSQL...")
+def ingest_to_postgres(data: List[Dict[str, Any]]):
+    """
+    Ingests a list of processed chunks into the PostgreSQL database.
+    This function is idempotent and will not create duplicates
+    based on the 'chunk_id' primary key.
+    """
     
-    insert_data = [
-        (
-            d["chunk_id"],
-            d["doc_hash"],
-            d["chunk_index"],
-            d["filename"],
-            json.dumps(d["page_numbers"]) if d["page_numbers"] else None, # Ensure JSONB
-            d["title"],
-            d["text"],
-            json.dumps(d["content_types"]) if d["content_types"] else None, # Ensure JSONB
-            json.dumps(d["bounding_boxes"]) if d["bounding_boxes"] else None, # Ensure JSONB
-        )
-        for d in data
-    ]
+    # 1. Wait for the database to be ready
+    if not wait_for_postgres():
+        print("Exiting due to failed PostgreSQL connection.")
+        return
+
+    conn = None
+    cursor = None
     
     try:
-        with psycopg.connect(conn_string) as conn:
-            with conn.cursor() as cur:
-                cur.executemany("""
-                INSERT INTO chunks (
-                    chunk_id, doc_hash, chunk_index, filename, 
-                    page_numbers, title, text, content_types, bounding_boxes
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (chunk_id) DO NOTHING;
-                """, insert_data)
-                
-                conn.commit()
-        print("PostgreSQL batch insert successful.")
-    except Exception as e:
-        print(f"ERROR: PostgreSQL batch insert failed: {e}")
+        # 2. Use your helper function to get the connection
+        # (This already sets autocommit=False)
+        conn, cursor = get_postgres_connection()
+        
+        if not conn or not cursor:
+            # get_postgres_connection already printed the error
+            return
+
+        # 3. Prepare the data for insertion
+        insert_data = [
+            (
+                str(d["chunk_id"]),
+                d["doc_hash"],
+                d["chunk_index"],
+                d["filename"],
+                json.dumps(d["page_numbers"]) if d["page_numbers"] else None,
+                d["title"],
+                d["text"],
+                json.dumps(d["content_types"]) if d["content_types"] else None,
+                json.dumps(d["bounding_boxes"]) if d["bounding_boxes"] else None,
+            )
+            for d in data
+        ]
+        
+        if not insert_data:
+            print("No data provided to ingest.")
+            return
+
+        # 4. Execute the batch insert as a single transaction
+        print(f"Attempting to ingest {len(insert_data)} chunks into PostgreSQL...")
+        
+        cursor.executemany("""
+        INSERT INTO chunks (
+            chunk_id, doc_hash, chunk_index, filename, 
+            page_numbers, title, text, content_types, bounding_boxes
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (chunk_id) DO NOTHING;
+        """, insert_data)
+        
+        # 5. Commit the entire transaction
+        conn.commit()
+        
+        # cursor.rowcount shows how many rows were *actually* inserted
+        print(f"PostgreSQL batch insert successful. {cursor.rowcount} new rows inserted.")
+
+    except Error as e:
+        print(f"❌ ERROR: PostgreSQL transaction failed: {e}")
+        # 6. Roll back the entire batch if anything went wrong
+        if conn:
+            conn.rollback()
+    finally:
+        # 7. Always close connections
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+        print("PostgreSQL connection closed.")

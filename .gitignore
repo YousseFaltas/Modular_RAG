@@ -5,7 +5,10 @@ __pycache__/
 .vscode
 # C extensions
 *.so
-
+chunker_module/helpers/__pycache__
+chunker_module/weaviate_data
+chunker_module/helpers/__pycache__
+.vscode
 # Distribution / packaging
 .Python
 build/
