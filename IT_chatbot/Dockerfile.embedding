@@ -1,0 +1,24 @@
+FROM python:3.10-slim
+
+# Install system dependencies for transformers and torch
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Create a requirements file specifically for the embedding service
+COPY embedding_requirements.txt .
+
+# Install dependencies
+RUN pip install --no-cache-dir -r embedding_requirements.txt
+
+# Copy the embedding service
+COPY embedding_service.py .
+COPY .env* ./
+
+EXPOSE 8001
+
+# Run the embedding service
+CMD ["uvicorn", "embedding_service:app", "--host", "0.0.0.0", "--port", "8001"]

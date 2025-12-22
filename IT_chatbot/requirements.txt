@@ -15,10 +15,8 @@ tree-sitter-javascript
 tree-sitter-python
 tree-sitter-typescript
 
-# --- Vector Database & Embeddings ---
+# --- Vector Database ---
 weaviate-client>=4.5.0
-sentence-transformers
-torch --index-url https://download.pytorch.org/whl/cpu 
 
 # --- Relational Database (PostgreSQL) ---
 # psycopg2-binary is preferred for Docker/Linux environments to avoid build errors

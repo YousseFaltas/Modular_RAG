@@ -1,0 +1,14 @@
+# --- Embedding Service Requirements ---
+# Minimal requirements for the embedding microservice
+
+# Web Framework
+fastapi
+uvicorn[standard]
+pydantic
+
+# Embeddings
+sentence-transformers
+torch --index-url https://download.pytorch.org/whl/cpu
+
+# Environment
+python-dotenv

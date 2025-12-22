@@ -4,14 +4,10 @@ from typing import List, Dict, Any
 # # Your helper functions are now imported
 from helpers.DB import ingest_to_postgres
 from helpers.vector_db import insert_to_weaviate
+from helpers.embedding_client import get_embedding_client
 
 # CHUNKING
 from docling.chunking import HybridChunker
-from dotenv import load_dotenv
-from openai import OpenAI
-import os
-from pathlib import Path
-
 from docling.datamodel.accelerator_options import AcceleratorDevice, AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import (
@@ -19,8 +15,10 @@ from docling.datamodel.pipeline_options import (
 )
 from docling.datamodel.settings import settings
 from docling.document_converter import DocumentConverter, PdfFormatOption
-from sentence_transformers import SentenceTransformer # <-- ADD THIS
-import torch
+from dotenv import load_dotenv
+from openai import OpenAI
+import os
+from pathlib import Path
 
 # --- 1. SETUP ---
 load_dotenv()
@@ -41,34 +39,25 @@ converter = DocumentConverter(
         )
     }
 )
-EMBEDDING_MODEL = "BAAI/bge-m3" 
 
-# --- Load the local embedding model ---
-# This will download the model the first time it's run
-print(f"Loading embedding model: '{EMBEDDING_MODEL}'...")
-try:
-    device = "cpu" if torch.cuda.is_available() else "cpu"
-    embedding_model = SentenceTransformer("BAAI/bge-m3", device=device)
-    print("Embedding model loaded successfully.")
-except Exception as e:
-    print(f"ERROR: Could not load SentenceTransformer model: {e}")
-    # In a real app, you'd exit here
-    
-    
 PDF_PATH = "/home/youssef/github/Modular_RAG/PDFs/1H2025_Earnings_Release.pdf"
 
 # Initialize OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+# Initialize embedding service client
+embedding_client = get_embedding_client()
+
 # --- 2. DOCUMENT CONVERSION & CHUNKING ---
-def data_extractions(pdf_path:str) -> any:
+def data_extractions(pdf_path: str) -> any:
     print(f"Starting conversion for: {pdf_path}")
     result = converter.convert(pdf_path)
     print("Document conversion complete.")
 
+    # For chunking, we'll use a simple tokenizer approach
+    # The embedding service will handle the actual embeddings
     chunker = HybridChunker(
-        tokenizer=embedding_model.tokenizer,           # <-- 2. Use the model's tokenizer
-        max_tokens=embedding_model.max_seq_length,   # <-- 3. Use the model's max length
+        max_tokens=512,  # Default max tokens for chunks
         merge_peers=True,
     )
 
@@ -142,20 +131,17 @@ def process_and_embed_chunks(docling_chunks: List[Any]) -> Dict[str, Any]:
         })
         texts_to_embed.append(chunk.text)
 
-    # --- Batch Embedding ---
-    print(f"Generating embeddings for {len(texts_to_embed)} chunks...")
+    # --- Batch Embedding using Embedding Service ---
+    print(f"Sending {len(processed_chunks)} chunks to embedding service...")
     try:
-        # Call the local model's .encode() method
-        for i, data in enumerate(processed_chunks):
-            vector = embedding_model.encode(data['text'], normalize_embeddings=True).tolist()
-            data["vector"] = vector
-            
-        print("Embeddings generated successfully.")
-        return {"document": parent_document_data, "chunks": processed_chunks}
+        # Call the embedding service API
+        embedded_chunks = embedding_client.embed_chunks(processed_chunks)
+        
+        print("Embeddings generated successfully via embedding service.")
+        return {"document": parent_document_data, "chunks": embedded_chunks}
 
     except Exception as e:
         print(f"ERROR: Failed to generate embeddings: {e}")
-       # --- 3. FIX RETURN VALUE ---
         return {"document": None, "chunks": []}
 
 
