@@ -34,9 +34,9 @@ def define_schema(client: weaviate.WeaviateClient):
     Creates the 'Document' and 'DocChunk' collections in Weaviate.
     """
     if not client.collections.exists(DOCUMENT_COLLECTION):
-        print("Creating 'Document' collection...")
+        print(f"Creating '{DOCUMENT_COLLECTION}' collection...")
         client.collections.create(
-            name="Document",
+            name=DOCUMENT_COLLECTION,
             properties=[
                 Property(
                     name="doc_hash", 

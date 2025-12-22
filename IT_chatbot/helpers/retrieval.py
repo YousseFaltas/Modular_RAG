@@ -1,13 +1,21 @@
-import os
-from typing import List
-import weaviate
+"""
+Retrieval module for querying Weaviate vector database.
+Uses Weaviate v4 collections API for consistency with vector_db.py
+"""
 
+import os
+from typing import List, Optional
+import weaviate
+from weaviate.classes.query import MetadataQuery
+import logging
+
+logger = logging.getLogger(__name__)
 
 DOCUMENT_COLLECTION = os.getenv("WEAVIATE_DOCUMENT_COLLECTION", "IT_Chatbot_Document")
 CHUNK_COLLECTION = os.getenv("WEAVIATE_CHUNK_COLLECTION", "DocChunk")
 
 
-def create_client():
+def create_client() -> Optional[weaviate.WeaviateClient]:
     """Create a Weaviate client using environment variables.
 
     Falls back to Docker service defaults if env vars are not provided.
@@ -26,15 +34,19 @@ def create_client():
             grpc_port=grpc_port
         )
         # quick health check
-        _ = client.is_ready()
+        if not client.is_ready():
+            logger.warning("Weaviate client not ready")
+            return None
         return client
     except Exception as e:
-        print(f"❌ Weaviate connection error: {e}")
+        logger.error(f"❌ Weaviate connection error: {e}")
         return None
 
 
 def get_rag_context(search_query: str, lang: str = "en", top_k: int = 7) -> str:
     """Query Weaviate for the most relevant chunks and return a combined context string.
+
+    Uses the Weaviate v4 collections API with hybrid search (text + vector).
 
     Args:
         search_query: The user-search query (already optimized).
@@ -49,35 +61,53 @@ def get_rag_context(search_query: str, lang: str = "en", top_k: int = 7) -> str:
         return ""  # Empty context on failure
 
     try:
-        # Prefer hybrid search (text + vector) when available in Weaviate
+        # Get the chunk collection using v4 API
+        chunk_collection = client.collections.get(CHUNK_COLLECTION)
+        
+        # Try hybrid search first (combines BM25 text search + vector similarity)
         try:
-            query_builder = client.query.get(CHUNK_COLLECTION, ["text", "title", "filename", "chunk_index"]).with_limit(top_k)
-            # try hybrid (text+vector) search first
+            results = chunk_collection.query.hybrid(
+                query=search_query,
+                alpha=0.5,  # Balance between keyword (0) and vector (1) search
+                limit=top_k,
+                return_metadata=MetadataQuery(score=True)
+            )
+        except Exception as hybrid_error:
+            logger.warning(f"Hybrid search failed, falling back to near_text: {hybrid_error}")
+            # Fallback to pure vector search if hybrid is not available
             try:
-                query = query_builder.with_hybrid({"query": search_query, "alpha": 0.5})
-                result = query.do()
-            except Exception:
-                # fallback to near_text vector search
-                query = query_builder.with_near_text({"concepts": [search_query]})
-                result = query.do()
-        except Exception:
-            # Generic fallback for client variations
-            result = client.query.get(CHUNK_COLLECTION, ["text", "title", "filename", "chunk_index"]).with_near_text({"concepts": [search_query]}).with_limit(top_k).do()
+                results = chunk_collection.query.near_text(
+                    query=search_query,
+                    limit=top_k,
+                    return_metadata=MetadataQuery(distance=True)
+                )
+            except Exception as vector_error:
+                logger.error(f"Vector search also failed: {vector_error}")
+                return ""
 
+        # Process results
         items = []
-        hits = result.get("data", {}).get("Get", {}).get(CHUNK_COLLECTION, [])
-        for h in hits:
-            # each h expected to be a dict with properties
-            text = h.get("text") or ""
-            title = h.get("title") or ""
-            filename = h.get("filename") or ""
-            chunk_index = h.get("chunk_index")
-            prefix = f"[{filename} | {title} | chunk:{chunk_index}]\n" if filename or title or chunk_index is not None else ""
+        for obj in results.objects:
+            props = obj.properties
+            text = props.get("text") or ""
+            title = props.get("title") or ""
+            filename = props.get("filename") or ""
+            chunk_index = props.get("chunk_index")
+            
+            # Build context prefix for traceability
+            prefix = ""
+            if filename or title or chunk_index is not None:
+                prefix = f"[{filename} | {title} | chunk:{chunk_index}]\n"
+            
             items.append(prefix + text)
 
         # Concatenate with separators
         context = "\n\n---\n\n".join(items)
         return context
+
+    except Exception as e:
+        logger.error(f"Error during retrieval: {e}")
+        return ""
     finally:
         try:
             client.close()
@@ -86,16 +116,19 @@ def get_rag_context(search_query: str, lang: str = "en", top_k: int = 7) -> str:
 
 
 if __name__ == "__main__":
-    # simple sanity check
+    # Simple sanity check
+    logging.basicConfig(level=logging.INFO)
     c = create_client()
     if c:
-        print("Weaviate client ready")
+        print("✅ Weaviate client ready")
         try:
-            print("Available collections (may vary depending on client):")
-            print(c.schema.get())
-        except Exception:
-            pass
+            collections = c.collections.list_all()
+            print(f"Available collections: {list(collections.keys())}")
+        except Exception as e:
+            print(f"Could not list collections: {e}")
         try:
             c.close()
         except Exception:
             pass
+    else:
+        print("❌ Failed to connect to Weaviate")

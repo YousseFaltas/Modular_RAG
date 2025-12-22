@@ -27,3 +27,4 @@ uvicorn[standard]
 langchain
 langchain_openai
 langdetect
+pytz
