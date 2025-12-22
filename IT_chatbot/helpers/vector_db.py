@@ -10,21 +10,24 @@ import weaviate.classes as wvc
 from weaviate.classes.data import DataObject
 from weaviate.util import generate_uuid5
 from typing import List, Dict, Any
+import os 
 
 DOCUMENT_COLLECTION = "IT_Chatbot_Document"
 CHUNK_COLLECTION = "DocChunk"
 
 def create_client():
-    print("Connecting to Weaviate to set up schema...")
-
+    """Connects to Weaviate using Docker service names."""
     try:
-        client = weaviate.connect_to_local()
-        print("Weaviate connection successful.")
+        client = weaviate.connect_to_custom(
+            http_host=os.getenv("WEAVIATE_HOST", "weaviate"),
+            http_port=int(os.getenv("WEAVIATE_PORT", 8080)),
+            grpc_host=os.getenv("WEAVIATE_HOST", "weaviate"),
+            grpc_port=int(os.getenv("WEAVIATE_GRPC_PORT", 50051))
+        )
         return client
-    
     except Exception as e:
-        print(f"ERROR: Could not connect to weaviate: {e}")
-
+        print(f"❌ Weaviate Connection Error: {e}")
+        return None
 
 def define_schema(client: weaviate.WeaviateClient):
     """
@@ -118,77 +121,39 @@ def define_schema(client: weaviate.WeaviateClient):
 
 
 def insert_to_weaviate(ingestion_data: Dict[str, Any]):
-    """
-    Ingests the parent document and its chunks into Weaviate (v4 syntax),
-    creating a graph link between them.
-    """
-    client = None
+    client = create_client()
+    if not client: return
+
     try:
-        # --- 1. Connect and ensure schema ---
-        client = weaviate.connect_to_local() 
+        # 1. Ensure schema exists using your existing logic
         define_schema(client) 
 
         parent_doc_data = ingestion_data.get("document")
         chunks_data = ingestion_data.get("chunks")
-
-        if not parent_doc_data or not chunks_data:
-            print("ERROR: Ingestion data is missing 'document' or 'chunks'.")
-            return
-
         parent_doc_uuid = parent_doc_data["uuid"]
 
-        # --- 3. Insert Parent Document Node (v4 syntax) ---
-        print(f"Ingesting 'Document' node: {parent_doc_data['filename']}")
-        document_collection = client.collections.get("Document")
-        
-        try:
-            # v4 syntax for inserting a single object
-            document_collection.data.insert(
-                properties={
-                    "doc_hash": parent_doc_data["doc_hash"],
-                    "filename": parent_doc_data["filename"],
-                    "mimetype": parent_doc_data["mimetype"],
-                },
-                uuid=parent_doc_uuid
-            )
-        except Exception as e:
-            if "already exists" in str(e):
-                print(f"Document node {parent_doc_uuid} already exists. Skipping.")
-            else:
-                raise e
+        # 2. Insert Document
+        doc_coll = client.collections.get(DOCUMENT_COLLECTION)
+        doc_coll.data.insert(
+            properties={
+                "doc_hash": parent_doc_data["doc_hash"],
+                "filename": parent_doc_data["filename"],
+                "mimetype": parent_doc_data["mimetype"],
+            },
+            uuid=parent_doc_uuid
+        )
 
-        # --- 4. Prepare & Batch Insert Chunks (v4 syntax) ---
-        print(f"Preparing {len(chunks_data)} chunks for batch ingestion...")
-        
-        chunk_collection = client.collections.get("DocChunk")
-        
-        # v4 syntax for batch writing
-        with chunk_collection.batch.fixed_size(batch_size=100) as batch:
-            for chunk_props in chunks_data:
-                
-                vector = chunk_props.pop("vector", None)
-                if vector is None:
-                    print(f"Warning: Chunk {chunk_props['chunk_index']} has no vector. Skipping.")
-                    continue
-                
-                # This UUID is for the Postgres link, remove it for Weaviate properties
-                chunk_props.pop("parent_doc_uuid", None) 
-                
-                # Add object to batch with properties, vector, and reference
+        # 3. Batch Insert Chunks
+        chunk_coll = client.collections.get(CHUNK_COLLECTION)
+        with chunk_coll.batch.fixed_size(batch_size=50) as batch:
+            for c in chunks_data:
+                vector = c.pop("vector", None)
+                c.pop("parent_doc_uuid", None)
                 batch.add_object(
-                    properties=chunk_props,
+                    properties=c,
                     vector=vector,
-                    # v4 syntax for adding a cross-reference:
-                    references={
-                        "fromDocument": parent_doc_uuid
-                    }
+                    references={"fromDocument": parent_doc_uuid}
                 )
-        
-        print(f"Successfully ingested {len(chunks_data)} chunks linked to document.")
-
-    except Exception as e:
-        print(f"ERROR during Weaviate ingestion: {e}")
+        print("✅ Weaviate ingestion complete.")
     finally:
-        if client:
-            client.close()
-            print("Weaviate connection closed.")
+        client.close()

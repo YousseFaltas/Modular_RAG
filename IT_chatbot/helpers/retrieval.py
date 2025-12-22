@@ -3,28 +3,28 @@ from typing import List
 import weaviate
 
 
-DOCUMENT_COLLECTION = os.getenv("WEAVIATE_DOCUMENT_COLLECTION", "Document")
+DOCUMENT_COLLECTION = os.getenv("WEAVIATE_DOCUMENT_COLLECTION", "IT_Chatbot_Document")
 CHUNK_COLLECTION = os.getenv("WEAVIATE_CHUNK_COLLECTION", "DocChunk")
 
 
 def create_client():
     """Create a Weaviate client using environment variables.
 
-    Falls back to localhost defaults if env vars are not provided.
+    Falls back to Docker service defaults if env vars are not provided.
     Returns None if connection fails.
     """
     try:
-        http_host = os.getenv("WEAVIATE_HOST", "http://localhost")
-        http_port = os.getenv("WEAVIATE_PORT", "8080")
-        url = http_host
-        # If host doesn't include scheme, add http://
-        if not url.startswith("http"):
-            url = f"http://{url}"
-        # Append port if not already present
-        if ":" not in url.split("//")[-1]:
-            url = f"{url}:{http_port}"
+        http_host = os.getenv("WEAVIATE_HOST", "weaviate")
+        http_port = int(os.getenv("WEAVIATE_PORT", 8080))
+        grpc_host = os.getenv("WEAVIATE_HOST", "weaviate")
+        grpc_port = int(os.getenv("WEAVIATE_GRPC_PORT", 50051))
 
-        client = weaviate.Client(url)
+        client = weaviate.connect_to_custom(
+            http_host=http_host,
+            http_port=http_port,
+            grpc_host=grpc_host,
+            grpc_port=grpc_port
+        )
         # quick health check
         _ = client.is_ready()
         return client

@@ -1,0 +1,31 @@
+# --- Core Application & UI ---
+streamlit
+python-dotenv
+requests
+openai
+
+# --- Data Processing & Chunking ---
+docling
+tiktoken
+# Required for Docling/Tree-sitter logic
+tree-sitter
+tree-sitter-c
+tree-sitter-java
+tree-sitter-javascript
+tree-sitter-python
+tree-sitter-typescript
+
+# --- Vector Database & Embeddings ---
+weaviate-client>=4.5.0
+sentence-transformers
+torch --index-url https://download.pytorch.org/whl/cpu 
+
+# --- Relational Database (PostgreSQL) ---
+# psycopg2-binary is preferred for Docker/Linux environments to avoid build errors
+psycopg2-binary
+pydantic
+fastapi
+uvicorn[standard]
+langchain
+langchain_openai
+langdetect

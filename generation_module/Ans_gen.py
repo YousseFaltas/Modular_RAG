@@ -12,6 +12,7 @@ from langdetect import detect
 # comment this use it without docker
 from helpers.date_agent import DateAgent
 from helpers.langsmith_config import setup_langsmith
+from helpers.retrieval import get_rag_context
 
 # uncomment this use it without docker
 # from helpers.date_agent import DateAgent
