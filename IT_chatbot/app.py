@@ -6,6 +6,12 @@ from testing_pipeline import data_extractions, process_and_embed_chunks
 from helpers.DB import ingest_to_postgres
 from helpers.vector_db import insert_to_weaviate
 
+try:
+    from rag_generator import rag_answer_with_memory
+except Exception as e:
+    rag_answer_with_memory = None
+    print(f"Warning: could not import rag_generator.rag_answer_with_memory: {e}")
+
 st.set_page_config(page_title="RAG Chunker Bot", layout="wide")
 
 st.title("🤖 RAG Document Processor & Chat")
@@ -39,11 +45,6 @@ st.subheader("Chat with your Data")
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-try:
-    from rag_generator import rag_answer_with_memory
-except Exception as e:
-    rag_answer_with_memory = None
-    print(f"Warning: could not import rag_generator.rag_answer_with_memory: {e}")
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):

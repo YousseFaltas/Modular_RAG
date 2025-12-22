@@ -11,7 +11,6 @@ import time
 import threading
 
 from helpers.date_agent import DateAgent
-from helpers.langsmith_config import setup_langsmith
 from helpers.retrieval import get_rag_context
 
 load_dotenv()
