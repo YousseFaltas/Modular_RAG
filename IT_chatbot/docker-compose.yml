@@ -1,10 +1,11 @@
 services:
+
   db:
     image: postgres:15
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1234
+      POSTGRES_DB: IT_chatbot
     ports:
       - "5432:5432"
     volumes:
@@ -18,23 +19,23 @@ services:
       - "8080:8080"
       - "50051:50051"
     environment:
-      QUERY_DEFAULTS_LIMIT: 25
-      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
-      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
-      DEFAULT_VECTORIZER_MODULE: 'none'
+      WEAVIATE_PASSWORD: 1234
     volumes:
       - weaviate_data:/var/lib/weaviate
     networks:
       - rag-network
-
+  
   streamlit-app:
     build: .
     ports:
       - "8501:8501"
     environment:
-      - POSTGRES_HOST=db
-      - WEAVIATE_HOST=weaviate
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      WEAVIATE_PASSWORD: 1234
+      POSTGRES_PASSWORD: 1234
+      POSTGRES_USER: postgres
+      POSTGRES_DB: IT_chatbot
+    env_file:
+      - .env
     depends_on:
       - db
       - weaviate
@@ -43,45 +44,20 @@ services:
     networks:
       - rag-network
 
-  embedding-service:
-    build:
-      context: .
-      dockerfile: Dockerfile.embedding
-    ports:
-      - "8001:8001"
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-    volumes:
-      - .:/app
-    networks:
-      - rag-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
   rag-service:
     build: .
     command: uvicorn rag_service:app --host 0.0.0.0 --port 8000
     ports:
       - "8000:8000"
-    environment:
-      - POSTGRES_HOST=db
-      - WEAVIATE_HOST=weaviate
-      - EMBEDDING_SERVICE_URL=http://embedding-service:8001
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    env_file:
+      - .env
     depends_on:
       - db
       - weaviate
-      - embedding-service
     volumes:
       - .:/app
     networks:
       - rag-network
-      
-  # Duplicate streamlit-app service removed
 
 volumes:
   postgres_data:

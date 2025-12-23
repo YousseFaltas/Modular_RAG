@@ -11,6 +11,8 @@ WORKDIR /app
 # Create a requirements file specifically for the embedding service
 COPY embedding_requirements.txt .
 
+RUN pip install --upgrade pip
+
 # Install dependencies
 RUN pip install --no-cache-dir -r embedding_requirements.txt
 

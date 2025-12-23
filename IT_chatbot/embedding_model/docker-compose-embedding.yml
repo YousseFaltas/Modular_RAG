@@ -1,0 +1,23 @@
+services:
+  embedding-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.embedding
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  rag-network:
+    driver: bridge

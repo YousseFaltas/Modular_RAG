@@ -1,5 +1,4 @@
 # --- Embedding Service Requirements ---
-# Minimal requirements for the embedding microservice
 
 # Web Framework
 fastapi
